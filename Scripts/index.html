@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LangChain RAG Chatbot</title>
+    <!-- Load Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Simple scrollbar styling for the chat window */
+        #chat-window::-webkit-scrollbar {
+            width: 6px;
+        }
+        #chat-window::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        #chat-window::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        #chat-window::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+<body class="font-sans antialiased bg-gray-100 flex flex-col h-screen">
+
+    <!-- Header -->
+    <header class="bg-white shadow-md">
+        <div class="max-w-4xl mx-auto px-4 py-3">
+            <h1 class="text-2xl font-bold text-gray-800">My RAG Chatbot</h1>
+            <p class="text-sm text-gray-500">Powered by LangChain, Groq, and FastAPI</p>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 overflow-hidden flex justify-center items-center p-4">
+        <div class="bg-white w-full max-w-4xl h-full shadow-xl rounded-lg flex flex-col">
+            
+            <!-- Chat Window -->
+            <div id="chat-window" class="flex-1 p-6 space-y-4 overflow-y-auto">
+                <!-- System Message -->
+                <div class="flex justify-start">
+                    <div class="px-4 py-3 rounded-lg bg-blue-500 text-white max-w-lg shadow">
+                        <p class="text-sm">Hello! I am an assistant. Ask me questions about the LangChain documentation, and I'll answer based on my knowledge.</p>
+                    </div>
+                </div>
+                <!-- Chat messages will be added here -->
+            </div>
+
+            <!-- Loading Indicator -->
+            <div id="loading" class="px-6 py-2 text-sm text-gray-500 hidden">
+                <span class="animate-pulse">Assistant is typing...</span>
+            </div>
+
+            <!-- Input Area -->
+            <div class="border-t p-4 bg-gray-50 rounded-b-lg">
+                <div class="flex space-x-3">
+                    <input type="text" id="user-input" placeholder="What is LangChain?" class="flex-1 px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <button id="send-button" class="px-6 py-2 bg-blue-500 text-white font-semibold rounded-lg shadow hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors">
+                        Send
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Get references to all the HTML elements we need
+        const chatWindow = document.getElementById('chat-window');
+        const userInput = document.getElementById('user-input');
+        const sendButton = document.getElementById('send-button');
+        const loadingIndicator = document.getElementById('loading');
+
+        // This function handles sending the message
+        async function handleSend() {
+            const query = userInput.value.trim();
+            if (query === "") return;
+
+            // 1. Add the user's message to the UI
+            addMessageToUI(query, 'user');
+            
+            // 2. Clear the input box
+            userInput.value = '';
+
+            // 3. Show the "typing..." indicator
+            loadingIndicator.classList.remove('hidden');
+
+            try {
+                // 4. Send the user's query to our Python backend
+                const response = await fetch('http://127.0.0.1:8000/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    // FIX 1: Changed 'query' to 'question' to match main.py
+                    body: JSON.stringify({ question: query }) // Send the query in the format our API expects
+                });
+
+                // 5. Handle a bad response from the server (e.g., if the server is down)
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    // Better error logging:
+                    let errorMsg = errorData.detail || 'An unknown error occurred.';
+                    if (Array.isArray(errorMsg)) {
+                        // FastAPI validation errors are arrays, let's make them readable
+                        errorMsg = errorMsg.map(e => e.msg).join(', ');
+                    }
+                    throw new Error(errorMsg);
+                }
+
+                // 6. Get the JSON response from the server
+                const data = await response.json();
+
+                // 7. Add the chatbot's answer to the UI
+                // FIX 2: Changed 'data.response' to 'data.answer' to match main.py
+                addMessageToUI(data.answer, 'assistant');
+
+            } catch (error) {
+                // 8. Show an error message in the chat if something goes wrong
+                console.error('Error fetching chat response:', error);
+                addMessageToUI(`Sorry, I ran into an error: ${error.message}`, 'error');
+            } finally {
+                // 9. Hide the "typing..." indicator
+                loadingIndicator.classList.add('hidden');
+            }
+        }
+
+        // This function adds a new message bubble to the chat window
+        function addMessageToUI(message, sender) {
+            const messageDiv = document.createElement('div');
+            const messageBubble = document.createElement('div');
+
+            messageBubble.classList.add('px-4', 'py-3', 'rounded-lg', 'max-w-lg', 'shadow');
+            messageBubble.textContent = message;
+
+            if (sender === 'user') {
+                messageDiv.classList.add('flex', 'justify-end');
+                messageBubble.classList.add('bg-gray-200', 'text-gray-800');
+            } else if (sender === 'assistant') {
+                messageDiv.classList.add('flex', 'justify-start');
+                messageBubble.classList.add('bg-blue-500', 'text-white');
+            } else { // For errors
+                messageDiv.classList.add('flex', 'justify-start');
+                messageBubble.classList.add('bg-red-500', 'text-white');
+            }
+
+            messageDiv.appendChild(messageBubble);
+            chatWindow.appendChild(messageDiv);
+
+            // Auto-scroll to the bottom
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+        }
+
+        // --- Event Listeners ---
+
+        // Send when the button is clicked
+        sendButton.addEventListener('click', handleSend);
+
+        // Send when "Enter" is pressed in the input box
+        userInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') {
+                handleSend();
+            }
+        });
+
+    </script>
+</body>
+</html>
